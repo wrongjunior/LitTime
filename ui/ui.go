@@ -2,7 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"strings"
+	_ "strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -15,19 +15,27 @@ import (
 var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
+			Foreground(lipgloss.Color("#7D56F4")).
+			Align(lipgloss.Center) // Центрируем заголовок
 
 	infoStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#888888"))
 
 	highlightStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
+			Foreground(lipgloss.Color("#7D56F4")).
+			Align(lipgloss.Left) // Выравниваем данные по левому краю
+
+	// Стиль для строк результата
+	resultStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Align(lipgloss.Left)
 )
 
 type model struct {
 	viewport viewport.Model
 	result   *estimator.Result
+	ready    bool
 }
 
 func (m model) Init() tea.Cmd {
@@ -41,8 +49,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:
+		// Адаптируем размеры viewport к размеру окна терминала
+		headerHeight := 3 // Высота заголовка
+		footerHeight := 2 // Высота для строки с информацией о выходе
+		verticalMargin := headerHeight + footerHeight
+
 		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 1
+		m.viewport.Height = msg.Height - verticalMargin
+		m.ready = true
 		return m, nil
 	}
 
@@ -52,21 +66,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	if !m.ready {
+		return "Инициализация..."
+	}
+
+	// Собираем вывод на экран
+	content := titleStyle.Render("LitTime Results") + "\n\n"
+	content += resultStyle.Render(fmt.Sprintf("Reading time: %s", highlightStyle.Render(fmt.Sprintf("%.2f min", m.result.ReadingTime)))) + "\n"
+	content += resultStyle.Render(fmt.Sprintf("Words: %s", highlightStyle.Render(fmt.Sprintf("%d", m.result.WordCount)))) + "\n"
+	content += resultStyle.Render(fmt.Sprintf("Sentences: %s", highlightStyle.Render(fmt.Sprintf("%d", m.result.SentenceCount)))) + "\n"
+	content += resultStyle.Render(fmt.Sprintf("Syllables: %s", highlightStyle.Render(fmt.Sprintf("%d", m.result.SyllableCount)))) + "\n"
+	content += resultStyle.Render(fmt.Sprintf("Flesch-Kincaid Index: %s", highlightStyle.Render(fmt.Sprintf("%.2f", m.result.FleschKincaidIndex)))) + "\n"
+
+	// Обновляем контент viewport
+	m.viewport.SetContent(content)
+
 	return fmt.Sprintf("%s\n%s", m.viewport.View(), infoStyle.Render("Press q to quit"))
 }
 
 func RunUI(result *estimator.Result) error {
-	content := strings.Builder{}
-	content.WriteString(titleStyle.Render("LitTime Results\n\n"))
-	content.WriteString(fmt.Sprintf("Reading time: %s\n", highlightStyle.Render(fmt.Sprintf("%.2f min", result.ReadingTime))))
-	content.WriteString(fmt.Sprintf("Words: %s\n", highlightStyle.Render(fmt.Sprintf("%d", result.WordCount))))
-	content.WriteString(fmt.Sprintf("Sentences: %s\n", highlightStyle.Render(fmt.Sprintf("%d", result.SentenceCount))))
-	content.WriteString(fmt.Sprintf("Syllables: %s\n", highlightStyle.Render(fmt.Sprintf("%d", result.SyllableCount))))
-	content.WriteString(fmt.Sprintf("Flesch-Kincaid Index: %s\n", highlightStyle.Render(fmt.Sprintf("%.2f", result.FleschKincaidIndex))))
+	// Создаем модель с начальным состоянием
+	vp := viewport.Model{Width: 80, Height: 20} // Стартовые размеры по умолчанию
 
-	vp := viewport.New(80, 20)
-	vp.SetContent(content.String())
-
+	// Запускаем программу с динамическим изменением размеров
 	p := tea.NewProgram(model{viewport: vp, result: result})
 	_, err := p.Run()
 	return err
