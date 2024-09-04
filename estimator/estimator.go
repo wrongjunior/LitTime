@@ -14,7 +14,7 @@ import (
 var (
 	russianVowels    = "аеёиоуыэюя"
 	englishVowels    = "aeiouy"
-	wordRegex        = regexp.MustCompile(`\p{L}+`)
+	wordRegex        = regexp.MustCompile(`[\p{L}\p{N}]+`)
 	sentenceEndRegex = regexp.MustCompile(`[.!?]+`)
 )
 
@@ -42,18 +42,16 @@ func CountSyllables(word string) int {
 		vowels = russianVowels
 	}
 
-	if strings.ContainsRune(vowels, rune(word[0])) {
-		syllables++
-	}
-
-	for i := 1; i < len(word); i++ {
-		if strings.ContainsRune(vowels, rune(word[i])) && !strings.ContainsRune(vowels, rune(word[i-1])) {
-			syllables++
+	for i, char := range word {
+		if strings.ContainsRune(vowels, char) {
+			if i == 0 || !strings.ContainsRune(vowels, rune(word[i-1])) {
+				syllables++
+			}
 		}
 	}
 
 	if isRussian && (strings.HasSuffix(word, "ь") || strings.HasSuffix(word, "й")) {
-		syllables--
+		syllables = max(syllables-1, 1)
 	}
 
 	return max(syllables, 1)
@@ -67,12 +65,21 @@ func CountWords(text string) (int, []string) {
 
 // подсчитывает количество предложений в тексте
 func CountSentences(text string) int {
-	sentences := sentenceEndRegex.Split(text, -1)
-	return len(sentences)
+	sentences := sentenceEndRegex.Split(strings.TrimSpace(text), -1)
+	count := 0
+	for _, s := range sentences {
+		if strings.TrimSpace(s) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 // рассчитывает индекс Флеша-Кинкейда
 func FleschKincaidIndex(wordsCount, sentencesCount, syllablesCount float64) float64 {
+	if wordsCount == 0 || sentencesCount == 0 {
+		return 0
+	}
 	return 206.835 - 1.3*(wordsCount/sentencesCount) - 60.1*(syllablesCount/wordsCount)
 }
 
@@ -81,20 +88,26 @@ func EstimateReadingTimeParallel(text string, readingSpeed float64, hasVisuals b
 	wordsCount, words := CountWords(text)
 	sentencesCount := CountSentences(text)
 
+	if wordsCount == 0 || sentencesCount == 0 {
+		return Result{}, errors.New("text is empty or invalid")
+	}
+
 	// параллельный подсчет слогов
 	syllablesChan := make(chan int)
 	var wg sync.WaitGroup
 
+	chunkSize := (len(words) + workerCount - 1) / workerCount
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
-		go func(start, end int) {
+		go func(start int) {
 			defer wg.Done()
+			end := min(start+chunkSize, len(words))
 			localSum := 0
 			for j := start; j < end; j++ {
 				localSum += CountSyllables(words[j])
 			}
 			syllablesChan <- localSum
-		}(i*len(words)/workerCount, (i+1)*len(words)/workerCount)
+		}(i * chunkSize)
 	}
 
 	go func() {
@@ -107,15 +120,11 @@ func EstimateReadingTimeParallel(text string, readingSpeed float64, hasVisuals b
 		syllablesCount += count
 	}
 
-	if wordsCount == 0 || sentencesCount == 0 {
-		return Result{}, errors.New("text is empty or invalid")
-	}
-
 	fkIndex := FleschKincaidIndex(float64(wordsCount), float64(sentencesCount), float64(syllablesCount))
 
 	adjustedSpeed := readingSpeed
 	if fkIndex < 60 {
-		adjustedSpeed *= 0.8 // cложный текст
+		adjustedSpeed *= 0.8 // сложный текст
 	}
 
 	readingTime := float64(wordsCount) / adjustedSpeed
