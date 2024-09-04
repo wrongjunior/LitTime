@@ -14,11 +14,11 @@ import (
 var (
 	russianVowels    = "аеёиоуыэюя"
 	englishVowels    = "aeiouy"
-	wordRegex        = regexp.MustCompile(`[\p{L}\p{N}]+`)
+	wordRegex        = regexp.MustCompile(`[\p{L}\p{N}]+(-[\p{L}\p{N}]+)*`)
 	sentenceEndRegex = regexp.MustCompile(`[.!?]+`)
 )
 
-// содержит результаты анализа текста
+// Result содержит результаты анализа текста
 type Result struct {
 	ReadingTime        float64
 	WordCount          int
@@ -27,43 +27,82 @@ type Result struct {
 	FleschKincaidIndex float64
 }
 
-// подсчитывает количество слогов в слове
+func isRussianWord(word string) bool {
+	for _, r := range word {
+		if unicode.Is(unicode.Cyrillic, r) {
+			return true
+		}
+	}
+	return false
+}
+
+func isYotatedVowel(r rune) bool {
+	return r == 'е' || r == 'ё' || r == 'ю' || r == 'я'
+}
+
+func isVowel(r rune) bool {
+	return strings.ContainsRune(russianVowels+englishVowels, r)
+}
+
 func CountSyllables(word string) int {
 	word = strings.ToLower(word)
 	syllables := 0
-	isRussian := false
-
-	if len(word) > 0 && unicode.Is(unicode.Cyrillic, rune(word[0])) {
-		isRussian = true
-	}
+	isRussian := isRussianWord(word)
 
 	vowels := englishVowels
 	if isRussian {
 		vowels = russianVowels
 	}
 
-	for i, char := range word {
-		if strings.ContainsRune(vowels, char) {
-			if i == 0 || !strings.ContainsRune(vowels, rune(word[i-1])) {
+	runes := []rune(word)
+	lastWasVowel := false
+	lastChar := rune(0)
+
+	for i, char := range runes {
+		charIsVowel := strings.ContainsRune(vowels, char)
+
+		if charIsVowel {
+			// Считаем слог, если это первая гласная или предыдущий символ не был гласной
+			if !lastWasVowel || (isRussian && isYotatedVowel(char) && !isVowel(lastChar)) {
 				syllables++
 			}
+			lastWasVowel = true
+		} else {
+			// Обработка специфических случаев для русского языка
+			if isRussian {
+				// Буква 'й' может образовывать слог с предыдущей гласной
+				if char == 'й' && i > 0 && isVowel(runes[i-1]) {
+					syllables++
+				}
+			}
+			lastWasVowel = false
 		}
+		lastChar = char
 	}
 
-	if isRussian && (strings.HasSuffix(word, "ь") || strings.HasSuffix(word, "й")) {
-		syllables = max(syllables-1, 1)
+	// Корректировка для английских слов
+	if !isRussian {
+		if strings.HasSuffix(word, "le") && len(word) > 2 && !strings.ContainsRune(vowels, rune(word[len(word)-3])) {
+			syllables++
+		}
+		if strings.HasSuffix(word, "es") || strings.HasSuffix(word, "ed") {
+			// Уменьшаем количество слогов, только если это не приводит к нулю
+			if syllables > 1 {
+				syllables--
+			}
+		}
 	}
 
 	return max(syllables, 1)
 }
 
-// подсчитывает количество слов в тексте
+// CountWords подсчитывает количество слов в тексте
 func CountWords(text string) (int, []string) {
 	words := wordRegex.FindAllString(text, -1)
 	return len(words), words
 }
 
-// подсчитывает количество предложений в тексте
+// CountSentences подсчитывает количество предложений в тексте
 func CountSentences(text string) int {
 	sentences := sentenceEndRegex.Split(strings.TrimSpace(text), -1)
 	count := 0
@@ -75,15 +114,19 @@ func CountSentences(text string) int {
 	return count
 }
 
-// рассчитывает индекс Флеша-Кинкейда
+// FleschKincaidIndex рассчитывает индекс Флеша-Кинкейда
 func FleschKincaidIndex(wordsCount, sentencesCount, syllablesCount float64) float64 {
 	if wordsCount == 0 || sentencesCount == 0 {
 		return 0
 	}
-	return 206.835 - 1.3*(wordsCount/sentencesCount) - 60.1*(syllablesCount/wordsCount)
+	// Для очень коротких текстов делаем минимальную коррекцию, чтобы избежать слишком больших значений
+	if wordsCount < 3 || sentencesCount < 2 {
+		return 100
+	}
+	return 206.835 - 1.015*(wordsCount/sentencesCount) - 84.6*(syllablesCount/wordsCount)
 }
 
-// оценивает время чтения текста с использованием параллельной обработки
+// EstimateReadingTimeParallel оценивает время чтения текста с использованием параллельной обработки
 func EstimateReadingTimeParallel(text string, readingSpeed float64, hasVisuals bool, workerCount int) (Result, error) {
 	wordsCount, words := CountWords(text)
 	sentencesCount := CountSentences(text)
@@ -92,7 +135,7 @@ func EstimateReadingTimeParallel(text string, readingSpeed float64, hasVisuals b
 		return Result{}, errors.New("text is empty or invalid")
 	}
 
-	// параллельный подсчет слогов
+	// Параллельный подсчет слогов
 	syllablesChan := make(chan int)
 	var wg sync.WaitGroup
 
@@ -124,7 +167,7 @@ func EstimateReadingTimeParallel(text string, readingSpeed float64, hasVisuals b
 
 	adjustedSpeed := readingSpeed
 	if fkIndex < 60 {
-		adjustedSpeed *= 0.8 // сложный текст
+		adjustedSpeed *= 0.8 // Сложный текст
 	}
 
 	readingTime := float64(wordsCount) / adjustedSpeed
@@ -142,7 +185,7 @@ func EstimateReadingTimeParallel(text string, readingSpeed float64, hasVisuals b
 	}, nil
 }
 
-// читает текст из файла
+// ReadTextFromFile читает текст из файла
 func ReadTextFromFile(filePath string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
