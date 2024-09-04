@@ -108,6 +108,8 @@ output_file: littime_results.json
 - [Viper](https://github.com/spf13/viper) — для загрузки конфигурации.
 - [Bubbletea](https://github.com/charmbracelet/bubbletea) — для создания интерактивного терминального интерфейса.
 
+## Лицензия
 
+Этот проект распространяется под лицензией MIT. Подробности см. в файле [LICENSE](LICENSE).
 
 
