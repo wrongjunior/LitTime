@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"strings"
 	_ "unicode"
@@ -79,10 +81,37 @@ func estimateReadingTime(text string, readingSpeed float64, hasVisuals bool) flo
 	return math.Round(readingTime*100) / 100
 }
 
+// считывает содержимое текстового файла и возвращает его как строку.
+func readTextFromFile(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	var text strings.Builder
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		text.WriteString(scanner.Text())
+		text.WriteString(" ")
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	return text.String(), nil
+}
+
 func main() {
-	text := `
-Этот текст содержит несколько предложений и слов. Он предназначен для тестирования программы, которая оценивает время чтения. Каждый читатель тратит разное время в зависимости от сложности текста.
-`
+	filePath := "example.txt" // замените на путь к вашему файлу
+
+	text, err := readTextFromFile(filePath)
+	if err != nil {
+		fmt.Println("Ошибка при чтении файла:", err)
+		return
+	}
+
 	readingTime := estimateReadingTime(text, 250, true)
-	fmt.Printf("Примерное время на чтение: %.2f минут.\n", readingTime)
+	fmt.Printf("Примерное время на чтение файла '%s': %.2f минут.\n", filePath, readingTime)
 }
