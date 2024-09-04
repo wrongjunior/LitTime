@@ -16,11 +16,35 @@ func NewRunCmd(cfg *config.Config) *cobra.Command {
 	var readingSpeed int
 	var hasVisuals bool
 	var workers int
+	var interactive bool
 
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the LitTime estimator",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Если интерактивный режим включен, запускаем интерфейс через bubbletea
+			if interactive {
+				userInputs, err := ui.RunInteractive(cfg)
+				if err != nil {
+					return err
+				}
+				filePath = userInputs.FilePath
+				readingSpeed = userInputs.ReadingSpeed
+				hasVisuals = userInputs.HasVisuals
+				workers = userInputs.Workers
+			}
+
+			// Проверяем, если интерактивный режим выключен, то файл должен быть указан через флаг
+			if !interactive && filePath == "" {
+				return fmt.Errorf("required flag(s) \"file\" not set")
+			}
+
+			// Проверяем, был ли передан валидный путь к файлу
+			if filePath == "" {
+				return fmt.Errorf("file path cannot be empty")
+			}
+
+			// Запуск оценки времени чтения
 			result, err := runEstimator(filePath, readingSpeed, hasVisuals, workers)
 			if err != nil {
 				return err
@@ -39,8 +63,7 @@ func NewRunCmd(cfg *config.Config) *cobra.Command {
 	cmd.Flags().IntVarP(&readingSpeed, "speed", "s", cfg.DefaultReadingSpeed, "Reading speed in words per minute")
 	cmd.Flags().BoolVarP(&hasVisuals, "visuals", "v", false, "Set to true if the text contains visual elements")
 	cmd.Flags().IntVarP(&workers, "workers", "w", cfg.DefaultWorkers, "Number of worker goroutines")
-
-	cmd.MarkFlagRequired("file")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Enable interactive mode for setting options")
 
 	return cmd
 }
