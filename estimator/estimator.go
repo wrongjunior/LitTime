@@ -18,7 +18,7 @@ var (
 	sentenceEndRegex = regexp.MustCompile(`[.!?]+`)
 )
 
-// Result содержит результаты анализа текста
+// содержит результаты анализа текста
 type Result struct {
 	ReadingTime        float64
 	WordCount          int
