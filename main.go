@@ -7,52 +7,62 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	_ "unicode"
+	"unicode"
 )
 
-// подсчитывает количество слогов в слове на основе гласных букв
+var (
+	russianVowels    = "аеёиоуыэюя"
+	englishVowels    = "aeiouy"
+	wordRegex        = regexp.MustCompile(`\p{L}+`)
+	sentenceEndRegex = regexp.MustCompile(`[.!?]+`)
+)
+
 func countSyllables(word string) int {
-	vowels := "аеёиоуыэюя"
-	syllables := 0
 	word = strings.ToLower(word)
+	syllables := 0
+	isRussian := false
+
+	// определяем язык слова по первой букве
+	if len(word) > 0 && unicode.Is(unicode.Cyrillic, rune(word[0])) {
+		isRussian = true
+	}
+
+	vowels := englishVowels
+	if isRussian {
+		vowels = russianVowels
+	}
+
 	if strings.ContainsRune(vowels, rune(word[0])) {
 		syllables++
 	}
+
 	for i := 1; i < len(word); i++ {
 		if strings.ContainsRune(vowels, rune(word[i])) && !strings.ContainsRune(vowels, rune(word[i-1])) {
 			syllables++
 		}
 	}
-	if strings.HasSuffix(word, "ь") || strings.HasSuffix(word, "й") {
+
+	if isRussian && (strings.HasSuffix(word, "ь") || strings.HasSuffix(word, "й")) {
 		syllables--
 	}
-	if syllables < 1 {
-		return 1
-	}
-	return syllables
+
+	return max(syllables, 1)
 }
 
-// подсчитывает количество слов в тексте
 func countWords(text string) (int, []string) {
-	words := regexp.MustCompile(`\b\w+\b`).FindAllString(text, -1)
+	words := wordRegex.FindAllString(text, -1)
 	return len(words), words
 }
 
-// подсчитывает количество предложений в тексте
 func countSentences(text string) int {
-	sentences := regexp.MustCompile(`[.!?]+`).Split(text, -1)
-	if sentences[len(sentences)-1] == "" {
-		return len(sentences) - 1
-	}
+	sentences := sentenceEndRegex.Split(text, -1)
 	return len(sentences)
 }
 
-// рассчитывает индекс Флеша-Иванова для русского языка
-func fleschKincaidIndex(wordsCount, sentencesCount, syllablesCount int) float64 {
-	return 206.835 - 1.3*float64(wordsCount)/float64(sentencesCount) - 60.1*float64(syllablesCount)/float64(wordsCount)
+func fleschKincaidIndex(wordsCount, sentencesCount, syllablesCount float64) float64 {
+	return 206.835 - 1.3*(wordsCount/sentencesCount) - 60.1*(syllablesCount/wordsCount)
 }
 
-// оценивает время на чтение текста с учетом сложности и структурных элементов
 func estimateReadingTime(text string, readingSpeed float64, hasVisuals bool) float64 {
 	wordsCount, words := countWords(text)
 	sentencesCount := countSentences(text)
@@ -62,18 +72,15 @@ func estimateReadingTime(text string, readingSpeed float64, hasVisuals bool) flo
 		syllablesCount += countSyllables(word)
 	}
 
-	fkIndex := fleschKincaidIndex(wordsCount, sentencesCount, syllablesCount)
+	fkIndex := fleschKincaidIndex(float64(wordsCount), float64(sentencesCount), float64(syllablesCount))
 
-	// корректировка скорости чтения в зависимости от сложности текста
 	adjustedSpeed := readingSpeed
 	if fkIndex < 60 {
 		adjustedSpeed *= 0.8 // Сложный текст
 	}
 
-	// оценка основного времени на чтение
 	readingTime := float64(wordsCount) / adjustedSpeed
 
-	// коррекция на структурные элементы
 	if hasVisuals {
 		readingTime *= 1.1
 	}
@@ -81,7 +88,6 @@ func estimateReadingTime(text string, readingSpeed float64, hasVisuals bool) flo
 	return math.Round(readingTime*100) / 100
 }
 
-// считывает содержимое текстового файла и возвращает его как строку.
 func readTextFromFile(filePath string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -104,7 +110,7 @@ func readTextFromFile(filePath string) (string, error) {
 }
 
 func main() {
-	filePath := "example.txt" // замените на путь к вашему файлу
+	filePath := "example.txt"
 
 	text, err := readTextFromFile(filePath)
 	if err != nil {
@@ -112,6 +118,6 @@ func main() {
 		return
 	}
 
-	readingTime := estimateReadingTime(text, 250, true)
-	fmt.Printf("Примерное время на чтение файла '%s': %.2f минут.\n", filePath, readingTime)
+	readingTimeMinutes := estimateReadingTime(text, 250, false) // TODO: вынести скорость чтения в глобальную переменную, а потом вообще сделать конфиг
+	fmt.Printf("Примерное время на чтение файла '%s': %.2f минут.\n", filePath, readingTimeMinutes)
 }
