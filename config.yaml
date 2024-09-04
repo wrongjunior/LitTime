@@ -1,0 +1,3 @@
+default_reading_speed: 200
+default_workers: 5
+output_file: "littime_results.json"
