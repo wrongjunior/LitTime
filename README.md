@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/dfcc016f-7a65-45ca-b1d7-b15f93b3e4fc
 1. **Клонируйте репозиторий:**
 
    ```bash
-   git clone https://github.com/yourusername/littime.git
+   git clone https://github.com/wrongjunior/LitTime.git
    cd littime
    ```
 
